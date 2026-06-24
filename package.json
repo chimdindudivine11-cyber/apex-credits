@@ -1,0 +1,12 @@
+{
+  "name": "apex-credits-system",
+  "version": "1.0.0",
+  "description": "Centralized ledger system for managing internal credits",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
