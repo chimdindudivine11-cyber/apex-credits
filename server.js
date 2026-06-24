@@ -1,0 +1,236 @@
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+
+// ================= CENTRAL DATABASE (Simulated) =================
+let users = {
+  "user_01": { username: "Alice_Apex", balance: 250.00, isBlocked: false },
+  "user_02": { username: "Bob_Trader", balance: 50.50, isBlocked: false },
+  "user_03": { username: "Charlie_Staff", balance: 1200.00, isBlocked: true }
+};
+
+// Admin password config (Change this in Render environment variables)
+const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || "Admin123";
+
+// ================= BACKEND API ROUTES =================
+
+// User Balance Route
+app.get('/api/user/balance/:id', (req, res) => {
+  const user = users[req.params.id];
+  if (!user) return res.status(404).json({ error: "Account ledger not found." });
+  if (user.isBlocked) return res.status(403).json({ error: "Access Denied: Your account balance is locked." });
+  res.json(user);
+});
+
+// Admin Dashboard Data Route
+app.get('/api/admin/users', (req, res) => {
+  const apiKey = req.headers['x-admin-key'];
+  if (apiKey !== ADMIN_SECRET_KEY) return res.status(401).json({ error: "Unauthorized System Key." });
+  res.json(users);
+});
+
+// Admin Control Route: Update Balance or Move Funds
+app.post('/api/admin/update-balance', (req, res) => {
+  const apiKey = req.headers['x-admin-key'];
+  const { userId, newBalance } = req.body;
+  if (apiKey !== ADMIN_SECRET_KEY) return res.status(401).json({ error: "Unauthorized System Key." });
+  if (!users[userId]) return res.status(404).json({ error: "User not found." });
+
+  users[userId].balance = parseFloat(newBalance);
+  res.json({ message: "Credits updated successfully.", user: users[userId] });
+});
+
+// Admin Control Route: Block/Unblock Account
+app.post('/api/admin/toggle-status', (req, res) => {
+  const apiKey = req.headers['x-admin-key'];
+  const { userId, status } = req.body;
+  if (apiKey !== ADMIN_SECRET_KEY) return res.status(401).json({ error: "Unauthorized System Key." });
+  if (!users[userId]) return res.status(404).json({ error: "User not found." });
+
+  users[userId].isBlocked = status;
+  res.json({ message: `User status changed. Blocked: ${status}`, user: users[userId] });
+});
+
+// ================= FRONTEND USER INTERFACE (HTML/JS) =================
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Apex Credits Portal</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }
+            .container { max-width: 900px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); }
+            h1, h2 { color: #38bdf8; }
+            .nav-buttons { display: flex; gap: 10px; margin-bottom: 20px; }
+            button { background: #0284c7; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+            button:hover { background: #0369a1; }
+            .panel { display: none; background: #334155; padding: 20px; border-radius: 8px; margin-top: 15px; }
+            .panel.active { display: block; }
+            input { background: #1e293b; color: white; border: 1px solid #475569; padding: 10px; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { text-align: left; padding: 12px; border-bottom: 1px solid #475569; }
+            th { background-color: #1e293b; color: #38bdf8; }
+            .btn-danger { background: #dc2626; }
+            .btn-danger:hover { background: #b91c1c; }
+            .btn-success { background: #16a34a; }
+            .card { background: #1e293b; padding: 15px; border-radius: 8px; border-left: 5px solid #38bdf8; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Apex Credits System</h1>
+            <p>Switch panels below to view user credit logs or access the Main Management Interface.</p>
+            
+            <div class="nav-buttons">
+                <button onclick="switchPanel('user-panel')">User Portal View</button>
+                <button onclick="switchPanel('admin-panel')" style="background:#475569;">System Admin Panel</button>
+            </div>
+
+            <div id="user-panel" class="panel active">
+                <h2>Apex Client Balance</h2>
+                <label>Enter Account ID to load system info:</label>
+                <input type="text" id="userIdInput" value="user_01" placeholder="e.g. user_01">
+                <button onclick="loadUserWallet()">Load Apex Credits</button>
+                
+                <div id="walletDisplay" style="margin-top:20px; display:none;">
+                    <div class="card">
+                        <h3>Welcome, <span id="walletName" style="color:#38bdf8;"></span></h3>
+                        <p style="font-size: 24px; margin: 10px 0;">Available Balance: <strong id="walletBalance" style="color:#4ade80;">0.00 Credits</strong></p>
+                        <small style="color:#94a3b8;">Apex Internal Network Sync: Online</small>
+                    </div>
+                </div>
+            </div>
+
+            <div id="admin-panel" class="panel">
+                <h2>Master System Dashboard</h2>
+                <label>Enter System Secret Key:</label>
+                <input type="password" id="adminKeyInput" value="Admin123" placeholder="Enter security key">
+                <button onclick="loadAdminDashboard()">Load Core Ledger</button>
+
+                <div id="adminTableContainer" style="margin-top: 20px;">
+                    <h3>Centralized Network Database</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Account ID</th>
+                                <th>Username</th>
+                                <th>Credit Ledger</th>
+                                <th>Network Status</th>
+                                <th>Control Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminUserTableBody">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            function switchPanel(panelId) {
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                document.getElementById(panelId).classList.add('active');
+            }
+
+            async function loadUserWallet() {
+                const userId = document.getElementById('userIdInput').value;
+                const display = document.getElementById('walletDisplay');
+                
+                try {
+                    const response = await fetch('/api/user/balance/' + userId);
+                    const data = await response.json();
+                    
+                    if (response.status !== 200) {
+                        alert(data.error || "Error reading network records.");
+                        display.style.display = 'none';
+                        return;
+                    }
+                    
+                    document.getElementById('walletName').innerText = data.username;
+                    document.getElementById('walletBalance').innerText = data.balance.toFixed(2) + ' Credits';
+                    display.style.display = 'block';
+                } catch (err) {
+                    alert("Network connection timeout.");
+                }
+            }
+
+            async function loadAdminDashboard() {
+                const adminKey = document.getElementById('adminKeyInput').value;
+                const tbody = document.getElementById('adminUserTableBody');
+                tbody.innerHTML = '';
+
+                try {
+                    const response = await fetch('/api/admin/users', {
+                        headers: { 'x-admin-key': adminKey }
+                    });
+                    const data = await response.json();
+
+                    if (response.status !== 200) {
+                        alert(data.error || "Access Denied.");
+                        return;
+                    }
+
+                    for (const [id, user] of Object.entries(data)) {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = \`
+                            <td>\${id}</td>
+                            <td>\${user.username}</td>
+                            <td><strong>\${user.balance.toFixed(2)} CR</strong></td>
+                            <td style="color:\${user.isBlocked ? '#dc2626' : '#16a34a'}">\${user.isBlocked ? 'LOCKED' : 'ACTIVE'}</td>
+                            <td>
+                                <button onclick="modifyBalance('\${id}')" style="padding: 4px 8px; font-size:12px;">Edit Balance</button>
+                                <button class="btn-danger" onclick="toggleBlock('\${id}', \${!user.isBlocked})" style="padding: 4px 8px; font-size:12px;">
+                                    \${user.isBlocked ? 'Release Lock' : 'Restrict Account'}
+                                </button>
+                            </td>
+                        \`;
+                        tbody.appendChild(tr);
+                    }
+                } catch (err) {
+                    alert("Error communicating with central API endpoint.");
+                }
+            }
+
+            async function modifyBalance(userId) {
+                const adminKey = document.getElementById('adminKeyInput').value;
+                const newAmount = prompt("Enter new precise credit count:");
+                if (newAmount === null || newAmount === "") return;
+
+                const response = await fetch('/api/admin/update-balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+                    body: JSON.stringify({ userId, newBalance: newAmount })
+                });
+                const resData = await response.json();
+                alert(resData.message || resData.error);
+                loadAdminDashboard();
+            }
+
+            async function toggleBlock(userId, setBlockStatus) {
+                const adminKey = document.getElementById('adminKeyInput').value;
+                const confirmAction = confirm("Modify strict security access for this account entry?");
+                if (!confirmAction) return;
+
+                const response = await fetch('/api/admin/toggle-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+                    body: JSON.stringify({ userId, status: setBlockStatus })
+                });
+                const resData = await response.json();
+                alert(resData.message || resData.error);
+                loadAdminDashboard();
+            }
+        </script>
+    </body>
+    </html>
+  `);
+});
+
+app.listen(PORT, () => {
+  console.log(`Apex Credits service running on port ${PORT}`);
+});
